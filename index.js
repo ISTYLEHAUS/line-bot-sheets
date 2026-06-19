@@ -8,6 +8,7 @@ app.use(express.json());
 const LINE_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const SHEET_ID = process.env.SHEET_ID;
 const SHEET_NAME = process.env.SHEET_NAME || 'AutoBot';
+const SESSION_SHEET = 'Sessions';
 const GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 
 const MONTH_FOLDERS = {
@@ -26,8 +27,6 @@ const CATEGORIES = [
   "Account", "Service", "Sales Revenue (Transfer)", "Other Income", "Office & Admin"
 ];
 
-const sessions = {};
-
 async function getSheets() {
   const auth = new google.auth.GoogleAuth({
     credentials: GOOGLE_CREDENTIALS,
@@ -44,6 +43,84 @@ async function getDrive() {
   return google.drive({ version: 'v3', auth });
 }
 
+// ===== Session Management (เก็บใน Google Sheet) =====
+async function getSession(userId) {
+  try {
+    const sheets = await getSheets();
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `${SESSION_SHEET}!A:B`
+    });
+    const rows = result.data.values || [];
+    for (const row of rows) {
+      if (row[0] === userId) {
+        return JSON.parse(row[1]);
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error('getSession error:', err);
+    return null;
+  }
+}
+
+async function saveSession(userId, session) {
+  try {
+    const sheets = await getSheets();
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `${SESSION_SHEET}!A:A`
+    });
+    const rows = result.data.values || [];
+    let rowIndex = -1;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i][0] === userId) { rowIndex = i + 1; break; }
+    }
+
+    const sessionStr = JSON.stringify(session);
+    if (rowIndex > 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `${SESSION_SHEET}!A${rowIndex}:B${rowIndex}`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [[userId, sessionStr]] }
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID,
+        range: `${SESSION_SHEET}!A:B`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [[userId, sessionStr]] }
+      });
+    }
+  } catch (err) {
+    console.error('saveSession error:', err);
+  }
+}
+
+async function deleteSession(userId) {
+  try {
+    const sheets = await getSheets();
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `${SESSION_SHEET}!A:A`
+    });
+    const rows = result.data.values || [];
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i][0] === userId) {
+        await sheets.spreadsheets.values.clear({
+          spreadsheetId: SHEET_ID,
+          range: `${SESSION_SHEET}!A${i + 1}:B${i + 1}`
+        });
+        break;
+      }
+    }
+  } catch (err) {
+    console.error('deleteSession error:', err);
+  }
+}
+
+// ===== Endpoints =====
 app.get('/', (req, res) => res.send('OK'));
 
 app.post('/webhook', async (req, res) => {
@@ -61,66 +138,94 @@ async function handleEvent(event) {
 
   if (event.type === 'postback') {
     const data = JSON.parse(event.postback.data);
+    const session = await getSession(userId);
+
     if (data.action === 'select_category') {
-      sessions[userId].category = data.category;
-      await replyConfirmation(replyToken, sessions[userId]);
+      if (!session) {
+        await replyText(replyToken, 'เซสชันหมดอายุแล้วครับ กรุณาส่งรูปสลิปใหม่อีกครั้ง');
+        return;
+      }
+      session.category = data.category;
+      await saveSession(userId, session);
+      await replyConfirmation(replyToken, session);
       return;
     }
+
     if (data.action === 'confirm') { await processEntry(userId, replyToken); return; }
     if (data.action === 'edit') { await replyEditOptions(replyToken); return; }
     if (data.action === 'edit_category') { await replyCategoryButtons(replyToken); return; }
+
     if (data.action === 'edit_detail') {
-      sessions[userId].waitingFor = 'detail';
+      if (session) { session.waitingFor = 'detail'; await saveSession(userId, session); }
       await replyText(replyToken, 'พิมพ์รายละเอียดใหม่ได้เลยครับ');
       return;
     }
+
     if (data.action === 'edit_date') {
-      sessions[userId].waitingFor = 'date';
-      await replyText(replyToken, 'พิมพ์วันที่ใหม่ได้เลยครับ\nเช่น 15/06');
+      if (session) { session.waitingFor = 'date'; await saveSession(userId, session); }
+      await replyText(replyToken, 'พิมพ์วันที่ใหม่ได้เลยครับ เช่น 15/06');
       return;
     }
   }
 
   if (event.type === 'message' && event.message.type === 'image') {
-    if (sessions[userId] && sessions[userId].imageIds) {
-      sessions[userId].imageIds.push(event.message.id);
-      await replyText(replyToken, `รับรูปที่ ${sessions[userId].imageIds.length} แล้วครับ ส่งรูปเพิ่มได้ หรือพิมพ์รายละเอียดได้เลย`);
+    let session = await getSession(userId);
+    if (session && session.imageIds) {
+      session.imageIds.push(event.message.id);
+      await saveSession(userId, session);
+      await replyText(replyToken, `รับรูปที่ ${session.imageIds.length} แล้วครับ ส่งรูปเพิ่มได้ หรือพิมพ์รายละเอียดได้เลย`);
       return;
     }
-    sessions[userId] = { imageIds: [event.message.id], detail: null, category: null, date: new Date(), waitingFor: null };
+    const newSession = {
+      imageIds: [event.message.id],
+      detail: null,
+      category: null,
+      date: new Date().toISOString(),
+      waitingFor: null
+    };
+    await saveSession(userId, newSession);
     await replyText(replyToken, 'รับรูปสลิปแล้วครับ พิมพ์รายละเอียดได้เลย');
     return;
   }
 
   if (event.type === 'message' && event.message.type === 'text') {
     const text = event.message.text.trim();
-    if (sessions[userId] && sessions[userId].waitingFor === 'detail') {
-      sessions[userId].detail = text;
-      sessions[userId].waitingFor = null;
-      await replyConfirmation(replyToken, sessions[userId]);
+    const session = await getSession(userId);
+
+    if (session && session.waitingFor === 'detail') {
+      session.detail = text;
+      session.waitingFor = null;
+      await saveSession(userId, session);
+      await replyConfirmation(replyToken, session);
       return;
     }
-    if (sessions[userId] && sessions[userId].waitingFor === 'date') {
-      sessions[userId].date = parseDate(text);
-      sessions[userId].waitingFor = null;
-      await replyConfirmation(replyToken, sessions[userId]);
+
+    if (session && session.waitingFor === 'date') {
+      session.date = parseDate(text).toISOString();
+      session.waitingFor = null;
+      await saveSession(userId, session);
+      await replyConfirmation(replyToken, session);
       return;
     }
-    if (sessions[userId] && sessions[userId].imageIds) {
-      sessions[userId].detail = text;
+
+    if (session && session.imageIds) {
+      session.detail = text;
+      await saveSession(userId, session);
       await replyCategoryButtons(replyToken);
       return;
     }
+
     await replyText(replyToken, 'ส่งรูปสลิปมาก่อนได้เลยครับ แล้วพิมพ์รายละเอียดตามมา');
   }
 }
 
 async function processEntry(userId, replyToken) {
-  const session = sessions[userId];
+  const session = await getSession(userId);
   if (!session) { await replyText(replyToken, 'ไม่พบข้อมูล กรุณาเริ่มใหม่ครับ'); return; }
 
   try {
     const sheets = await getSheets();
+    const sessionDate = new Date(session.date);
 
     // 1. หาแถวแรกที่ column A ว่าง
     const checkResult = await sheets.spreadsheets.values.get({
@@ -137,8 +242,8 @@ async function processEntry(userId, replyToken) {
       targetRow = i + 2;
     }
 
-    // 2. เขียน A, C, D แยกกัน ไม่แตะ B เพื่อให้ formula คำนวณเอง
-    const dateStr = formatDateSheet(session.date);
+    // 2. เขียน A, C, D แยกกัน ไม่แตะ B
+    const dateStr = formatDateSheet(sessionDate);
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SHEET_ID,
       requestBody: {
@@ -154,7 +259,7 @@ async function processEntry(userId, replyToken) {
     // 3. รอให้ formula คำนวณ B
     await sleep(3000);
 
-    // 4. อ่านค่า B จริงจาก sheet
+    // 4. อ่านค่า B จริง
     const bResult = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
       range: `${SHEET_NAME}!B${targetRow}`
@@ -163,20 +268,20 @@ async function processEntry(userId, replyToken) {
 
     if (!docNumber) {
       await replyText(replyToken, `บันทึกแล้ว (แถว ${targetRow}) แต่ formula B ยังไม่คำนวณ กรุณาเช็ค Sheet ครับ`);
-      delete sessions[userId];
+      await deleteSession(userId);
       return;
     }
 
-    const monthNum = ('0' + (session.date.getMonth() + 1)).slice(-2);
+    const monthNum = ('0' + (sessionDate.getMonth() + 1)).slice(-2);
     const folderId = MONTH_FOLDERS[monthNum];
 
     if (!folderId) {
       await replyText(replyToken, `บันทึกแล้ว (${docNumber}) แต่ไม่พบโฟลเดอร์เดือน ${monthNum}`);
-      delete sessions[userId];
+      await deleteSession(userId);
       return;
     }
 
-    // 5. สร้างโฟลเดอร์ชื่อ "06-RM-025"
+    // 5. สร้างโฟลเดอร์
     const folderName = `${monthNum}-${docNumber}`;
     const drive = await getDrive();
     const folderResponse = await drive.files.create({
@@ -203,7 +308,7 @@ async function processEntry(userId, replyToken) {
       requestBody: { values: [[`=HYPERLINK("${folderUrl}","${folderName}")`]] }
     });
 
-    delete sessions[userId];
+    await deleteSession(userId);
 
     await replyText(replyToken,
       `✅ บันทึกแล้วครับ\n` +
@@ -217,7 +322,7 @@ async function processEntry(userId, replyToken) {
   } catch (err) {
     console.error('processEntry error:', err);
     await replyText(replyToken, `เกิดข้อผิดพลาด: ${err.message}`);
-    delete sessions[userId];
+    await deleteSession(userId);
   }
 }
 
@@ -243,7 +348,8 @@ async function replyCategoryButtons(replyToken) {
 }
 
 async function replyConfirmation(replyToken, session) {
-  const dateStr = formatDateSheet(session.date);
+  const sessionDate = new Date(session.date);
+  const dateStr = formatDateSheet(sessionDate);
   const text =
     `📋 ตรวจสอบอีกรอบ\n` +
     `ประเภท: ${session.category}\n` +
@@ -281,7 +387,6 @@ async function sendReply(replyToken, messages) {
   );
 }
 
-// format วันที่เป็น 19-Jun (เหมือน Sheet เดิม)
 function formatDateSheet(date) {
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `${date.getDate()}-${months[date.getMonth()]}`;
