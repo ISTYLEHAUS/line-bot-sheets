@@ -286,7 +286,8 @@ async function processEntry(userId, replyToken) {
     const drive = await getDrive();
     const folderResponse = await drive.files.create({
       requestBody: { name: folderName, mimeType: 'application/vnd.google-apps.folder', parents: [folderId] },
-      fields: 'id, webViewLink'
+      fields: 'id, webViewLink',
+      supportsAllDrives: true
     });
     const newFolderId = folderResponse.data.id;
     const folderUrl = folderResponse.data.webViewLink;
@@ -296,7 +297,8 @@ async function processEntry(userId, replyToken) {
       const imageStream = await downloadLineImage(session.imageIds[i]);
       await drive.files.create({
         requestBody: { name: `slip_${i + 1}.jpg`, parents: [newFolderId] },
-        media: { mimeType: 'image/jpeg', body: imageStream }
+        media: { mimeType: 'image/jpeg', body: imageStream },
+        supportsAllDrives: true
       });
     }
 
