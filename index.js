@@ -281,24 +281,38 @@ async function processEntry(userId, replyToken) {
       return;
     }
 
-    // 5. สร้างโฟลเดอร์
+    // 5. สร้างโฟลเดอร์ผ่าน Apps Script (ใช้ account เจ้าของ Drive)
     const folderName = `${monthNum}-${docNumber}`;
-    const drive = await getDrive();
-    const folderResponse = await drive.files.create({
-      requestBody: { name: folderName, mimeType: 'application/vnd.google-apps.folder', parents: [folderId] },
-      fields: 'id, webViewLink',
-      supportsAllDrives: true
-    });
-    const newFolderId = folderResponse.data.id;
-    const folderUrl = folderResponse.data.webViewLink;
+    const appsScriptUrl = process.env.APPS_SCRIPT_URL;
 
-    // 6. อัปโหลดรูปสลิป
+    const createFolderRes = await axios.post(appsScriptUrl, {
+      action: 'createFolder',
+      folderName: folderName,
+      parentFolderId: folderId
+    });
+    const createFolderData = JSON.parse(typeof createFolderRes.data === 'string' ? createFolderRes.data : JSON.stringify(createFolderRes.data));
+
+    if (!createFolderData.success) {
+      await replyText(replyToken, `บันทึกแล้ว (${docNumber}) แต่สร้างโฟลเดอร์ไม่สำเร็จ: ${createFolderData.error}`);
+      await deleteSession(userId);
+      return;
+    }
+
+    const newFolderId = createFolderData.folderId;
+    const folderUrl = createFolderData.folderUrl;
+
+    // 6. อัปโหลดรูปสลิปผ่าน Apps Script
     for (let i = 0; i < session.imageIds.length; i++) {
-      const imageStream = await downloadLineImage(session.imageIds[i]);
-      await drive.files.create({
-        requestBody: { name: `slip_${i + 1}.jpg`, parents: [newFolderId] },
-        media: { mimeType: 'image/jpeg', body: imageStream },
-        supportsAllDrives: true
+      const imageResponse = await axios.get(
+        `https://api-data.line.me/v2/bot/message/${session.imageIds[i]}/content`,
+        { headers: { Authorization: `Bearer ${LINE_TOKEN}` }, responseType: 'arraybuffer' }
+      );
+      const base64Data = Buffer.from(imageResponse.data).toString('base64');
+      await axios.post(appsScriptUrl, {
+        action: 'uploadImage',
+        base64Data: base64Data,
+        folderId: newFolderId,
+        fileName: `slip_${i + 1}.jpg`
       });
     }
 
