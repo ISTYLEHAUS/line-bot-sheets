@@ -35,12 +35,37 @@ async function getSheets() {
   return google.sheets({ version: 'v4', auth });
 }
 
-async function getDrive() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: GOOGLE_CREDENTIALS,
-    scopes: ['https://www.googleapis.com/auth/drive']
-  });
-  return google.drive({ version: 'v3', auth });
+// ===== เรียก Apps Script พร้อมจัดการ redirect =====
+async function callAppsScript(payload) {
+  const appsScriptUrl = process.env.APPS_SCRIPT_URL;
+
+  try {
+    // ลองส่ง POST ตรงๆ ก่อน โดยไม่ follow redirect อัตโนมัติ
+    const res = await axios.post(appsScriptUrl, payload, {
+      maxRedirects: 0,
+      validateStatus: (status) => status < 400 || status === 302
+    });
+
+    // ถ้าได้ 302 ให้ POST ไปยัง redirect URL ด้วย payload เดิม
+    if (res.status === 302 && res.headers.location) {
+      const res2 = await axios.post(res.headers.location, payload, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return res2.data;
+    }
+
+    return res.data;
+
+  } catch (err) {
+    // axios บางเวอร์ชัน throw error เมื่อเจอ 302
+    if (err.response && err.response.status === 302 && err.response.headers.location) {
+      const res2 = await axios.post(err.response.headers.location, payload, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return res2.data;
+    }
+    throw err;
+  }
 }
 
 // ===== Session Management (เก็บใน Google Sheet) =====
@@ -276,21 +301,21 @@ async function processEntry(userId, replyToken) {
     const folderId = MONTH_FOLDERS[monthNum];
 
     if (!folderId) {
-      await replyText(replyToken, `บันทึกแล้ว (${docNumber}) แต่ไม่พบโฟลเดอร์เดือน ${monthNum}`);
+      await replyText(replyToken, `บันทึกแล้ว (${docNumber}) แต่ไม่พบโฟลเดอร์เดือน ${monthNum} — เช็ค env FOLDER_${monthNum} ครับ`);
       await deleteSession(userId);
       return;
     }
 
-    // 5. สร้างโฟลเดอร์ผ่าน Apps Script (ใช้ account เจ้าของ Drive)
+    // 5. สร้างโฟลเดอร์ผ่าน Apps Script
     const folderName = `${monthNum}-${docNumber}`;
-    const appsScriptUrl = process.env.APPS_SCRIPT_URL;
+    console.log(`[createFolder] folderName=${folderName} parentFolderId=${folderId}`);
 
-    const createFolderRes = await axios.post(appsScriptUrl, {
+    const createFolderData = await callAppsScript({
       action: 'createFolder',
       folderName: folderName,
       parentFolderId: folderId
     });
-    const createFolderData = JSON.parse(typeof createFolderRes.data === 'string' ? createFolderRes.data : JSON.stringify(createFolderRes.data));
+    console.log('[createFolder] response:', JSON.stringify(createFolderData));
 
     if (!createFolderData.success) {
       await replyText(replyToken, `บันทึกแล้ว (${docNumber}) แต่สร้างโฟลเดอร์ไม่สำเร็จ: ${createFolderData.error}`);
@@ -308,12 +333,15 @@ async function processEntry(userId, replyToken) {
         { headers: { Authorization: `Bearer ${LINE_TOKEN}` }, responseType: 'arraybuffer' }
       );
       const base64Data = Buffer.from(imageResponse.data).toString('base64');
-      await axios.post(appsScriptUrl, {
+
+      console.log(`[uploadImage] slip_${i + 1}.jpg → folderId=${newFolderId}`);
+      const uploadData = await callAppsScript({
         action: 'uploadImage',
         base64Data: base64Data,
         folderId: newFolderId,
         fileName: `slip_${i + 1}.jpg`
       });
+      console.log(`[uploadImage] response:`, JSON.stringify(uploadData));
     }
 
     // 7. ใส่ลิงก์ลง column M
@@ -340,14 +368,6 @@ async function processEntry(userId, replyToken) {
     await replyText(replyToken, `เกิดข้อผิดพลาด: ${err.message}`);
     await deleteSession(userId);
   }
-}
-
-async function downloadLineImage(messageId) {
-  const response = await axios.get(
-    `https://api-data.line.me/v2/bot/message/${messageId}/content`,
-    { headers: { Authorization: `Bearer ${LINE_TOKEN}` }, responseType: 'stream' }
-  );
-  return response.data;
 }
 
 async function replyCategoryButtons(replyToken) {
