@@ -35,50 +35,28 @@ async function getSheets() {
   return google.sheets({ version: 'v4', auth });
 }
 
-// ===== เรียก Apps Script พร้อมจัดการ redirect =====
+// ===== เรียก Apps Script =====
 async function callAppsScript(payload) {
   const appsScriptUrl = process.env.APPS_SCRIPT_URL;
-
-  // Apps Script Web App redirect POST → URL ใหม่ที่รับแค่ GET
-  // วิธีที่ใช้งานได้จริงคือส่งเป็น GET พร้อม payload ใน query string
-  // แต่รูป base64 ใหญ่เกิน URL limit — จึงแยก 2 กรณี
-
   const bodyStr = JSON.stringify(payload);
 
+  // node-fetch follows redirect correctly with POST
+  const { default: fetch } = await import('node-fetch');
+
+  const res = await fetch(appsScriptUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: bodyStr,
+    redirect: 'follow'
+  });
+
+  const text = await res.text();
+  console.log('[callAppsScript] status:', res.status, 'body:', text.substring(0, 200));
+
   try {
-    // Step 1: POST ไปที่ URL เดิม ไม่ follow redirect
-    const res = await axios.post(appsScriptUrl, bodyStr, {
-      maxRedirects: 0,
-      validateStatus: (s) => s < 500,
-      headers: { 'Content-Type': 'text/plain' }
-    });
-
-    // Step 2: ถ้าได้ redirect (301/302) ให้ POST ซ้ำไปที่ URL ใหม่
-    if ((res.status === 301 || res.status === 302) && res.headers.location) {
-      const redirectUrl = res.headers.location;
-      console.log('[callAppsScript] redirect to:', redirectUrl);
-      const res2 = await axios.post(redirectUrl, bodyStr, {
-        headers: { 'Content-Type': 'text/plain' },
-        maxRedirects: 0,
-        validateStatus: (s) => s < 500
-      });
-      return typeof res2.data === 'string' ? JSON.parse(res2.data) : res2.data;
-    }
-
-    return typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-
-  } catch (err) {
-    if (err.response && (err.response.status === 301 || err.response.status === 302) && err.response.headers.location) {
-      const redirectUrl = err.response.headers.location;
-      console.log('[callAppsScript] catch redirect to:', redirectUrl);
-      const res2 = await axios.post(redirectUrl, bodyStr, {
-        headers: { 'Content-Type': 'text/plain' },
-        maxRedirects: 0,
-        validateStatus: (s) => s < 500
-      });
-      return typeof res2.data === 'string' ? JSON.parse(res2.data) : res2.data;
-    }
-    throw err;
+    return JSON.parse(text);
+  } catch(e) {
+    throw new Error('Apps Script returned non-JSON: ' + text.substring(0, 300));
   }
 }
 
