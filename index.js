@@ -35,25 +35,25 @@ async function getSheets() {
   return google.sheets({ version: 'v4', auth });
 }
 
-// ===== à¹€à¸£à¸µà¸¢à¸ Apps Script à¸žà¸£à¹‰à¸­à¸¡à¸ˆà¸±à¸”à¸à¸²à¸£ redirect =====
+// ===== เรียก Apps Script พร้อมจัดการ redirect =====
 async function callAppsScript(payload) {
   const appsScriptUrl = process.env.APPS_SCRIPT_URL;
 
-  // Apps Script Web App redirect POST â†’ URL à¹ƒà¸«à¸¡à¹ˆà¸—à¸µà¹ˆà¸£à¸±à¸šà¹à¸„à¹ˆ GET
-  // à¸§à¸´à¸˜à¸µà¸—à¸µà¹ˆà¹ƒà¸Šà¹‰à¸‡à¸²à¸™à¹„à¸”à¹‰à¸ˆà¸£à¸´à¸‡à¸„à¸·à¸­à¸ªà¹ˆà¸‡à¹€à¸›à¹‡à¸™ GET à¸žà¸£à¹‰à¸­à¸¡ payload à¹ƒà¸™ query string
-  // à¹à¸•à¹ˆà¸£à¸¹à¸› base64 à¹ƒà¸«à¸à¹ˆà¹€à¸à¸´à¸™ URL limit â€” à¸ˆà¸¶à¸‡à¹à¸¢à¸ 2 à¸à¸£à¸“à¸µ
+  // Apps Script Web App redirect POST → URL ใหม่ที่รับแค่ GET
+  // วิธีที่ใช้งานได้จริงคือส่งเป็น GET พร้อม payload ใน query string
+  // แต่รูป base64 ใหญ่เกิน URL limit — จึงแยก 2 กรณี
 
   const bodyStr = JSON.stringify(payload);
 
   try {
-    // Step 1: POST à¹„à¸›à¸—à¸µà¹ˆ URL à¹€à¸”à¸´à¸¡ à¹„à¸¡à¹ˆ follow redirect
+    // Step 1: POST ไปที่ URL เดิม ไม่ follow redirect
     const res = await axios.post(appsScriptUrl, bodyStr, {
       maxRedirects: 0,
       validateStatus: (s) => s < 500,
       headers: { 'Content-Type': 'text/plain' }
     });
 
-    // Step 2: à¸–à¹‰à¸²à¹„à¸”à¹‰ redirect (301/302) à¹ƒà¸«à¹‰ POST à¸‹à¹‰à¸³à¹„à¸›à¸—à¸µà¹ˆ URL à¹ƒà¸«à¸¡à¹ˆ
+    // Step 2: ถ้าได้ redirect (301/302) ให้ POST ซ้ำไปที่ URL ใหม่
     if ((res.status === 301 || res.status === 302) && res.headers.location) {
       const redirectUrl = res.headers.location;
       console.log('[callAppsScript] redirect to:', redirectUrl);
@@ -82,7 +82,7 @@ async function callAppsScript(payload) {
   }
 }
 
-// ===== Session Management (à¹€à¸à¹‡à¸šà¹ƒà¸™ Google Sheet) =====
+// ===== Session Management (เก็บใน Google Sheet) =====
 async function getSession(userId) {
   try {
     const sheets = await getSheets();
@@ -181,7 +181,7 @@ async function handleEvent(event) {
 
     if (data.action === 'select_category') {
       if (!session) {
-        await replyText(replyToken, 'à¹€à¸‹à¸ªà¸Šà¸±à¸™à¸«à¸¡à¸”à¸­à¸²à¸¢à¸¸à¹à¸¥à¹‰à¸§à¸„à¸£à¸±à¸š à¸à¸£à¸¸à¸“à¸²à¸ªà¹ˆà¸‡à¸£à¸¹à¸›à¸ªà¸¥à¸´à¸›à¹ƒà¸«à¸¡à¹ˆà¸­à¸µà¸à¸„à¸£à¸±à¹‰à¸‡');
+        await replyText(replyToken, 'เซสชันหมดอายุแล้วครับ กรุณาส่งรูปสลิปใหม่อีกครั้ง');
         return;
       }
       session.category = data.category;
@@ -196,13 +196,13 @@ async function handleEvent(event) {
 
     if (data.action === 'edit_detail') {
       if (session) { session.waitingFor = 'detail'; await saveSession(userId, session); }
-      await replyText(replyToken, 'à¸žà¸´à¸¡à¸žà¹Œà¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”à¹ƒà¸«à¸¡à¹ˆà¹„à¸”à¹‰à¹€à¸¥à¸¢à¸„à¸£à¸±à¸š');
+      await replyText(replyToken, 'พิมพ์รายละเอียดใหม่ได้เลยครับ');
       return;
     }
 
     if (data.action === 'edit_date') {
       if (session) { session.waitingFor = 'date'; await saveSession(userId, session); }
-      await replyText(replyToken, 'à¸žà¸´à¸¡à¸žà¹Œà¸§à¸±à¸™à¸—à¸µà¹ˆà¹ƒà¸«à¸¡à¹ˆà¹„à¸”à¹‰à¹€à¸¥à¸¢à¸„à¸£à¸±à¸š à¹€à¸Šà¹ˆà¸™ 15/06');
+      await replyText(replyToken, 'พิมพ์วันที่ใหม่ได้เลยครับ เช่น 15/06');
       return;
     }
   }
@@ -212,7 +212,7 @@ async function handleEvent(event) {
     if (session && session.imageIds) {
       session.imageIds.push(event.message.id);
       await saveSession(userId, session);
-      await replyText(replyToken, `à¸£à¸±à¸šà¸£à¸¹à¸›à¸—à¸µà¹ˆ ${session.imageIds.length} à¹à¸¥à¹‰à¸§à¸„à¸£à¸±à¸š à¸ªà¹ˆà¸‡à¸£à¸¹à¸›à¹€à¸žà¸´à¹ˆà¸¡à¹„à¸”à¹‰ à¸«à¸£à¸·à¸­à¸žà¸´à¸¡à¸žà¹Œà¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”à¹„à¸”à¹‰à¹€à¸¥à¸¢`);
+      await replyText(replyToken, `รับรูปที่ ${session.imageIds.length} แล้วครับ ส่งรูปเพิ่มได้ หรือพิมพ์รายละเอียดได้เลย`);
       return;
     }
     const newSession = {
@@ -223,7 +223,7 @@ async function handleEvent(event) {
       waitingFor: null
     };
     await saveSession(userId, newSession);
-    await replyText(replyToken, 'à¸£à¸±à¸šà¸£à¸¹à¸›à¸ªà¸¥à¸´à¸›à¹à¸¥à¹‰à¸§à¸„à¸£à¸±à¸š à¸žà¸´à¸¡à¸žà¹Œà¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”à¹„à¸”à¹‰à¹€à¸¥à¸¢');
+    await replyText(replyToken, 'รับรูปสลิปแล้วครับ พิมพ์รายละเอียดได้เลย');
     return;
   }
 
@@ -254,19 +254,19 @@ async function handleEvent(event) {
       return;
     }
 
-    await replyText(replyToken, 'à¸ªà¹ˆà¸‡à¸£à¸¹à¸›à¸ªà¸¥à¸´à¸›à¸¡à¸²à¸à¹ˆà¸­à¸™à¹„à¸”à¹‰à¹€à¸¥à¸¢à¸„à¸£à¸±à¸š à¹à¸¥à¹‰à¸§à¸žà¸´à¸¡à¸žà¹Œà¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”à¸•à¸²à¸¡à¸¡à¸²');
+    await replyText(replyToken, 'ส่งรูปสลิปมาก่อนได้เลยครับ แล้วพิมพ์รายละเอียดตามมา');
   }
 }
 
 async function processEntry(userId, replyToken) {
   const session = await getSession(userId);
-  if (!session) { await replyText(replyToken, 'à¹„à¸¡à¹ˆà¸žà¸šà¸‚à¹‰à¸­à¸¡à¸¹à¸¥ à¸à¸£à¸¸à¸“à¸²à¹€à¸£à¸´à¹ˆà¸¡à¹ƒà¸«à¸¡à¹ˆà¸„à¸£à¸±à¸š'); return; }
+  if (!session) { await replyText(replyToken, 'ไม่พบข้อมูล กรุณาเริ่มใหม่ครับ'); return; }
 
   try {
     const sheets = await getSheets();
     const sessionDate = new Date(session.date);
 
-    // 1. à¸«à¸²à¹à¸–à¸§à¹à¸£à¸à¸—à¸µà¹ˆ column A à¸§à¹ˆà¸²à¸‡
+    // 1. หาแถวแรกที่ column A ว่าง
     const checkResult = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
       range: `${SHEET_NAME}!A:A`
@@ -281,7 +281,7 @@ async function processEntry(userId, replyToken) {
       targetRow = i + 2;
     }
 
-    // 2. à¹€à¸‚à¸µà¸¢à¸™ A, C, D à¹à¸¢à¸à¸à¸±à¸™ à¹„à¸¡à¹ˆà¹à¸•à¸° B
+    // 2. เขียน A, C, D แยกกัน ไม่แตะ B
     const dateStr = formatDateSheet(sessionDate);
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SHEET_ID,
@@ -295,10 +295,10 @@ async function processEntry(userId, replyToken) {
       }
     });
 
-    // 3. à¸£à¸­à¹ƒà¸«à¹‰ formula à¸„à¸³à¸™à¸§à¸“ B
+    // 3. รอให้ formula คำนวณ B
     await sleep(3000);
 
-    // 4. à¸­à¹ˆà¸²à¸™à¸„à¹ˆà¸² B à¸ˆà¸£à¸´à¸‡
+    // 4. อ่านค่า B จริง
     const bResult = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
       range: `${SHEET_NAME}!B${targetRow}`
@@ -306,7 +306,7 @@ async function processEntry(userId, replyToken) {
     const docNumber = bResult.data.values && bResult.data.values[0] ? bResult.data.values[0][0] : null;
 
     if (!docNumber) {
-      await replyText(replyToken, `à¸šà¸±à¸™à¸—à¸¶à¸à¹à¸¥à¹‰à¸§ (à¹à¸–à¸§ ${targetRow}) à¹à¸•à¹ˆ formula B à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸„à¸³à¸™à¸§à¸“ à¸à¸£à¸¸à¸“à¸²à¹€à¸Šà¹‡à¸„ Sheet à¸„à¸£à¸±à¸š`);
+      await replyText(replyToken, `บันทึกแล้ว (แถว ${targetRow}) แต่ formula B ยังไม่คำนวณ กรุณาเช็ค Sheet ครับ`);
       await deleteSession(userId);
       return;
     }
@@ -315,12 +315,12 @@ async function processEntry(userId, replyToken) {
     const folderId = MONTH_FOLDERS[monthNum];
 
     if (!folderId) {
-      await replyText(replyToken, `à¸šà¸±à¸™à¸—à¸¶à¸à¹à¸¥à¹‰à¸§ (${docNumber}) à¹à¸•à¹ˆà¹„à¸¡à¹ˆà¸žà¸šà¹‚à¸Ÿà¸¥à¹€à¸”à¸­à¸£à¹Œà¹€à¸”à¸·à¸­à¸™ ${monthNum} â€” à¹€à¸Šà¹‡à¸„ env FOLDER_${monthNum} à¸„à¸£à¸±à¸š`);
+      await replyText(replyToken, `บันทึกแล้ว (${docNumber}) แต่ไม่พบโฟลเดอร์เดือน ${monthNum} — เช็ค env FOLDER_${monthNum} ครับ`);
       await deleteSession(userId);
       return;
     }
 
-    // 5. à¸ªà¸£à¹‰à¸²à¸‡à¹‚à¸Ÿà¸¥à¹€à¸”à¸­à¸£à¹Œà¸œà¹ˆà¸²à¸™ Apps Script
+    // 5. สร้างโฟลเดอร์ผ่าน Apps Script
     const folderName = `${monthNum}-${docNumber}`;
     console.log(`[createFolder] folderName=${folderName} parentFolderId=${folderId}`);
 
@@ -332,7 +332,7 @@ async function processEntry(userId, replyToken) {
     console.log('[createFolder] response:', JSON.stringify(createFolderData));
 
     if (!createFolderData.success) {
-      await replyText(replyToken, `à¸šà¸±à¸™à¸—à¸¶à¸à¹à¸¥à¹‰à¸§ (${docNumber}) à¹à¸•à¹ˆà¸ªà¸£à¹‰à¸²à¸‡à¹‚à¸Ÿà¸¥à¹€à¸”à¸­à¸£à¹Œà¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ: ${createFolderData.error}`);
+      await replyText(replyToken, `บันทึกแล้ว (${docNumber}) แต่สร้างโฟลเดอร์ไม่สำเร็จ: ${createFolderData.error}`);
       await deleteSession(userId);
       return;
     }
@@ -340,7 +340,7 @@ async function processEntry(userId, replyToken) {
     const newFolderId = createFolderData.folderId;
     const folderUrl = createFolderData.folderUrl;
 
-    // 6. à¸­à¸±à¸›à¹‚à¸«à¸¥à¸”à¸£à¸¹à¸›à¸ªà¸¥à¸´à¸›à¸œà¹ˆà¸²à¸™ Apps Script
+    // 6. อัปโหลดรูปสลิปผ่าน Apps Script
     for (let i = 0; i < session.imageIds.length; i++) {
       const imageResponse = await axios.get(
         `https://api-data.line.me/v2/bot/message/${session.imageIds[i]}/content`,
@@ -348,7 +348,7 @@ async function processEntry(userId, replyToken) {
       );
       const base64Data = Buffer.from(imageResponse.data).toString('base64');
 
-      console.log(`[uploadImage] slip_${i + 1}.jpg â†’ folderId=${newFolderId}`);
+      console.log(`[uploadImage] slip_${i + 1}.jpg → folderId=${newFolderId}`);
       const uploadData = await callAppsScript({
         action: 'uploadImage',
         base64Data: base64Data,
@@ -358,7 +358,7 @@ async function processEntry(userId, replyToken) {
       console.log(`[uploadImage] response:`, JSON.stringify(uploadData));
     }
 
-    // 7. à¹ƒà¸ªà¹ˆà¸¥à¸´à¸‡à¸à¹Œà¸¥à¸‡ column M
+    // 7. ใส่ลิงก์ลง column M
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
       range: `${SHEET_NAME}!M${targetRow}`,
@@ -368,18 +368,21 @@ async function processEntry(userId, replyToken) {
 
     await deleteSession(userId);
 
-    await replyText(replyToken,
-      `âœ… à¸šà¸±à¸™à¸—à¸¶à¸à¹à¸¥à¹‰à¸§à¸„à¸£à¸±à¸š\n` +
-      `à¹€à¸¥à¸‚à¹€à¸­à¸à¸ªà¸²à¸£: ${docNumber}\n` +
-      `à¸›à¸£à¸°à¹€à¸ à¸—: ${session.category}\n` +
-      `à¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”: ${session.detail}\n` +
-      `à¹‚à¸Ÿà¸¥à¹€à¸”à¸­à¸£à¹Œ: ${folderName}\n` +
-      `à¸£à¸¹à¸›à¸ªà¸¥à¸´à¸›: ${session.imageIds.length} à¸£à¸¹à¸›`
-    );
+    const safeMsg = [
+      '✅ บันทึกแล้วครับ',
+      'เลขเอกสาร: ' + String(docNumber || '').slice(0, 50),
+      'ประเภท: ' + String(session.category || '').slice(0, 50),
+      'รายละเอียด: ' + String(session.detail || '').slice(0, 100),
+      'โฟลเดอร์: ' + String(folderName || '').slice(0, 50),
+      'รูปสลิป: ' + session.imageIds.length + ' รูป'
+    ].join('
+');
+    await replyText(replyToken, safeMsg);
 
   } catch (err) {
     console.error('processEntry error:', err);
-    await replyText(replyToken, `à¹€à¸à¸´à¸”à¸‚à¹‰à¸­à¸œà¸´à¸”à¸žà¸¥à¸²à¸”: ${err.message}`);
+    const errMsg = err && err.message ? String(err.message).slice(0, 150) : 'unknown';
+    await replyText(replyToken, 'เกิดข้อผิดพลาด: ' + errMsg).catch(() => {});
     await deleteSession(userId);
   }
 }
@@ -394,34 +397,34 @@ async function replyCategoryButtons(replyToken) {
       displayText: cat
     }
   }));
-  await sendReply(replyToken, [{ type: 'text', text: 'à¹€à¸¥à¸·à¸­à¸à¸›à¸£à¸°à¹€à¸ à¸—à¸£à¸²à¸¢à¸à¸²à¸£à¹„à¸”à¹‰à¹€à¸¥à¸¢à¸„à¸£à¸±à¸š', quickReply: { items } }]);
+  await sendReply(replyToken, [{ type: 'text', text: 'เลือกประเภทรายการได้เลยครับ', quickReply: { items } }]);
 }
 
 async function replyConfirmation(replyToken, session) {
   const sessionDate = new Date(session.date);
   const dateStr = formatDateSheet(sessionDate);
   const text =
-    `ðŸ“‹ à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¸­à¸µà¸à¸£à¸­à¸š\n` +
-    `à¸›à¸£à¸°à¹€à¸ à¸—: ${session.category}\n` +
-    `à¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”: ${session.detail}\n` +
-    `à¸§à¸±à¸™à¸—à¸µà¹ˆ: ${dateStr}\n` +
-    `à¸£à¸¹à¸›à¸ªà¸¥à¸´à¸›: ${session.imageIds.length} à¸£à¸¹à¸›\n\nà¸–à¸¹à¸à¸•à¹‰à¸­à¸‡à¹„à¸«à¸¡à¸„à¸£à¸±à¸š?`;
+    `📋 ตรวจสอบอีกรอบ\n` +
+    `ประเภท: ${session.category}\n` +
+    `รายละเอียด: ${session.detail}\n` +
+    `วันที่: ${dateStr}\n` +
+    `รูปสลิป: ${session.imageIds.length} รูป\n\nถูกต้องไหมครับ?`;
   await sendReply(replyToken, [{
     type: 'text', text,
     quickReply: { items: [
-      { type: 'action', action: { type: 'postback', label: 'âœ… à¸¢à¸·à¸™à¸¢à¸±à¸™', data: JSON.stringify({ action: 'confirm' }), displayText: 'âœ… à¸¢à¸·à¸™à¸¢à¸±à¸™' } },
-      { type: 'action', action: { type: 'postback', label: 'âŒ à¹à¸à¹‰à¹„à¸‚', data: JSON.stringify({ action: 'edit' }), displayText: 'âŒ à¹à¸à¹‰à¹„à¸‚' } }
+      { type: 'action', action: { type: 'postback', label: '✅ ยืนยัน', data: JSON.stringify({ action: 'confirm' }), displayText: '✅ ยืนยัน' } },
+      { type: 'action', action: { type: 'postback', label: '❌ แก้ไข', data: JSON.stringify({ action: 'edit' }), displayText: '❌ แก้ไข' } }
     ]}
   }]);
 }
 
 async function replyEditOptions(replyToken) {
   await sendReply(replyToken, [{
-    type: 'text', text: 'à¸­à¸¢à¸²à¸à¹à¸à¹‰à¹„à¸‚à¸­à¸°à¹„à¸£à¸„à¸£à¸±à¸š?',
+    type: 'text', text: 'อยากแก้ไขอะไรครับ?',
     quickReply: { items: [
-      { type: 'action', action: { type: 'postback', label: 'à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¸›à¸£à¸°à¹€à¸ à¸—', data: JSON.stringify({ action: 'edit_category' }), displayText: 'à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¸›à¸£à¸°à¹€à¸ à¸—' } },
-      { type: 'action', action: { type: 'postback', label: 'à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”', data: JSON.stringify({ action: 'edit_detail' }), displayText: 'à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”' } },
-      { type: 'action', action: { type: 'postback', label: 'à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¸§à¸±à¸™à¸—à¸µà¹ˆ', data: JSON.stringify({ action: 'edit_date' }), displayText: 'à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¸§à¸±à¸™à¸—à¸µà¹ˆ' } }
+      { type: 'action', action: { type: 'postback', label: 'เปลี่ยนประเภท', data: JSON.stringify({ action: 'edit_category' }), displayText: 'เปลี่ยนประเภท' } },
+      { type: 'action', action: { type: 'postback', label: 'เปลี่ยนรายละเอียด', data: JSON.stringify({ action: 'edit_detail' }), displayText: 'เปลี่ยนรายละเอียด' } },
+      { type: 'action', action: { type: 'postback', label: 'เปลี่ยนวันที่', data: JSON.stringify({ action: 'edit_date' }), displayText: 'เปลี่ยนวันที่' } }
     ]}
   }]);
 }
