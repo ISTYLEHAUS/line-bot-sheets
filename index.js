@@ -375,8 +375,7 @@ async function processEntry(userId, replyToken) {
       'รายละเอียด: ' + String(session.detail || '').slice(0, 100),
       'โฟลเดอร์: ' + String(folderName || '').slice(0, 50),
       'รูปสลิป: ' + session.imageIds.length + ' รูป'
-    ].join('
-');
+    ].join('\n');
     await replyText(replyToken, safeMsg);
 
   } catch (err) {
