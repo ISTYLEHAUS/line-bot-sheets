@@ -233,7 +233,11 @@ async function handleEvent(event) {
       session.amount = amount;
       session.waitingFor = null;
       await saveSession(userId, session);
-      await replyConfirmation(replyToken, session);
+      if (session.category === null) {
+        await replyCategoryButtons(replyToken);
+      } else {
+        await replyConfirmation(replyToken, session);
+      }
       return;
     }
 
@@ -253,18 +257,6 @@ async function handleEvent(event) {
       return;
     }
 
-    if (session && session.imageIds && session.amount === null) {
-      const amount = parseAmount(text);
-      if (amount === null) {
-        await replyText(replyToken, '⚠️ กรุณาพิมพ์ยอดเงินเป็นตัวเลขเท่านั้นครับ เช่น 1500 หรือ 1500.50');
-        return;
-      }
-      session.amount = amount;
-      await saveSession(userId, session);
-      await replyCategoryButtons(replyToken);
-      return;
-    }
-
     await replyText(replyToken, 'ส่งรูปสลิปมาก่อนได้เลยครับ แล้วพิมพ์รายละเอียดตามมา');
   }
 }
@@ -272,6 +264,24 @@ async function handleEvent(event) {
 async function processEntry(userId, replyToken) {
   const session = await getSession(userId);
   if (!session) { await replyText(replyToken, 'ไม่พบข้อมูล กรุณาเริ่มใหม่ครับ'); return; }
+
+  if (!session.category) {
+    await replyText(replyToken, '⚠️ ยังไม่ได้เลือกประเภทรายการครับ');
+    await replyCategoryButtons(replyToken);
+    return;
+  }
+  if (session.amount === null || session.amount === undefined) {
+    await replyText(replyToken, '⚠️ ยังไม่ได้ใส่ยอดเงินครับ พิมพ์ยอดเงินได้เลย เช่น 1500');
+    session.waitingFor = 'amount';
+    await saveSession(userId, session);
+    return;
+  }
+  if (!session.detail) {
+    await replyText(replyToken, '⚠️ ยังไม่ได้ใส่รายละเอียดครับ พิมพ์รายละเอียดได้เลย');
+    session.waitingFor = 'detail';
+    await saveSession(userId, session);
+    return;
+  }
 
   try {
     const sheets = await getSheets();
