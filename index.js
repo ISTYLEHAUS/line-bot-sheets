@@ -183,6 +183,12 @@ async function handleEvent(event) {
       await replyText(replyToken, 'พิมพ์วันที่ใหม่ได้เลยครับ เช่น 15/06');
       return;
     }
+
+    if (data.action === 'edit_amount') {
+      if (session) { session.waitingFor = 'amount'; await saveSession(userId, session); }
+      await replyText(replyToken, 'พิมพ์ยอดเงินใหม่ได้เลยครับ เช่น 1500 หรือ 1500.50');
+      return;
+    }
   }
 
   if (event.type === 'message' && event.message.type === 'image') {
@@ -196,6 +202,7 @@ async function handleEvent(event) {
     const newSession = {
       imageIds: [event.message.id],
       detail: null,
+      amount: null,
       category: null,
       date: new Date().toISOString(),
       waitingFor: null
@@ -217,6 +224,19 @@ async function handleEvent(event) {
       return;
     }
 
+    if (session && session.waitingFor === 'amount') {
+      const amount = parseAmount(text);
+      if (amount === null) {
+        await replyText(replyToken, '⚠️ กรุณาพิมพ์ยอดเงินเป็นตัวเลขเท่านั้นครับ เช่น 1500 หรือ 1500.50');
+        return;
+      }
+      session.amount = amount;
+      session.waitingFor = null;
+      await saveSession(userId, session);
+      await replyConfirmation(replyToken, session);
+      return;
+    }
+
     if (session && session.waitingFor === 'date') {
       session.date = parseDate(text).toISOString();
       session.waitingFor = null;
@@ -225,8 +245,21 @@ async function handleEvent(event) {
       return;
     }
 
-    if (session && session.imageIds) {
+    if (session && session.imageIds && session.detail === null) {
       session.detail = text;
+      session.waitingFor = 'amount';
+      await saveSession(userId, session);
+      await replyText(replyToken, 'ใส่ยอดเงินด้วยครับ เช่น 1500 หรือ 1500.50');
+      return;
+    }
+
+    if (session && session.imageIds && session.amount === null) {
+      const amount = parseAmount(text);
+      if (amount === null) {
+        await replyText(replyToken, '⚠️ กรุณาพิมพ์ยอดเงินเป็นตัวเลขเท่านั้นครับ เช่น 1500 หรือ 1500.50');
+        return;
+      }
+      session.amount = amount;
       await saveSession(userId, session);
       await replyCategoryButtons(replyToken);
       return;
@@ -259,7 +292,7 @@ async function processEntry(userId, replyToken) {
       targetRow = i + 2;
     }
 
-    // 2. เขียน A, C, D แยกกัน ไม่แตะ B
+    // 2. เขียน A, C, D, H แยกกัน ไม่แตะ B
     const dateStr = formatDateSheet(sessionDate);
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SHEET_ID,
@@ -268,7 +301,8 @@ async function processEntry(userId, replyToken) {
         data: [
           { range: `${SHEET_NAME}!A${targetRow}`, values: [[dateStr]] },
           { range: `${SHEET_NAME}!C${targetRow}`, values: [[session.category]] },
-          { range: `${SHEET_NAME}!D${targetRow}`, values: [[session.detail]] }
+          { range: `${SHEET_NAME}!D${targetRow}`, values: [[session.detail]] },
+          { range: `${SHEET_NAME}!H${targetRow}`, values: [[session.amount]] }
         ]
       }
     });
@@ -351,6 +385,7 @@ async function processEntry(userId, replyToken) {
       'เลขเอกสาร: ' + String(docNumber || '').slice(0, 50),
       'ประเภท: ' + String(session.category || '').slice(0, 50),
       'รายละเอียด: ' + String(session.detail || '').slice(0, 100),
+      'ยอดเงิน: ' + Number(session.amount || 0).toLocaleString('th-TH') + ' บาท',
       'โฟลเดอร์: ' + String(folderName || '').slice(0, 50),
       'รูปสลิป: ' + session.imageIds.length + ' รูป'
     ].join('\n');
@@ -380,10 +415,14 @@ async function replyCategoryButtons(replyToken) {
 async function replyConfirmation(replyToken, session) {
   const sessionDate = new Date(session.date);
   const dateStr = formatDateSheet(sessionDate);
+  const amountStr = session.amount !== null && session.amount !== undefined
+    ? Number(session.amount).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+    : '-';
   const text =
     `📋 ตรวจสอบอีกรอบ\n` +
     `ประเภท: ${session.category}\n` +
     `รายละเอียด: ${session.detail}\n` +
+    `ยอดเงิน: ${amountStr} บาท\n` +
     `วันที่: ${dateStr}\n` +
     `รูปสลิป: ${session.imageIds.length} รูป\n\nถูกต้องไหมครับ?`;
   await sendReply(replyToken, [{
@@ -401,6 +440,7 @@ async function replyEditOptions(replyToken) {
     quickReply: { items: [
       { type: 'action', action: { type: 'postback', label: 'เปลี่ยนประเภท', data: JSON.stringify({ action: 'edit_category' }), displayText: 'เปลี่ยนประเภท' } },
       { type: 'action', action: { type: 'postback', label: 'เปลี่ยนรายละเอียด', data: JSON.stringify({ action: 'edit_detail' }), displayText: 'เปลี่ยนรายละเอียด' } },
+      { type: 'action', action: { type: 'postback', label: 'เปลี่ยนยอดเงิน', data: JSON.stringify({ action: 'edit_amount' }), displayText: 'เปลี่ยนยอดเงิน' } },
       { type: 'action', action: { type: 'postback', label: 'เปลี่ยนวันที่', data: JSON.stringify({ action: 'edit_date' }), displayText: 'เปลี่ยนวันที่' } }
     ]}
   }]);
@@ -420,6 +460,14 @@ async function sendReply(replyToken, messages) {
 function formatDateSheet(date) {
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `${date.getDate()}-${months[date.getMonth()]}`;
+}
+
+function parseAmount(text) {
+  const cleaned = text.replace(/,/g, '').trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
+  const num = parseFloat(cleaned);
+  if (isNaN(num) || num <= 0) return null;
+  return num;
 }
 
 function parseDate(text) {
