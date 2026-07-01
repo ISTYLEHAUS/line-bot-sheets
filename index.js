@@ -312,7 +312,7 @@ async function processEntry(userId, replyToken) {
           { range: `${SHEET_NAME}!A${targetRow}`, values: [[dateStr]] },
           { range: `${SHEET_NAME}!C${targetRow}`, values: [[session.category]] },
           { range: `${SHEET_NAME}!D${targetRow}`, values: [[session.detail]] },
-          { range: `${SHEET_NAME}!H${targetRow}`, values: [[session.amount]] }
+          { range: `${SHEET_NAME}!I${targetRow}`, values: [[session.amount]] }
         ]
       }
     });
@@ -383,7 +383,7 @@ async function processEntry(userId, replyToken) {
     // 7. ใส่ลิงก์ลง column M
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `${SHEET_NAME}!M${targetRow}`,
+      range: `${SHEET_NAME}!N${targetRow}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [[`=HYPERLINK("${folderUrl}","${folderName}")`]] }
     });
